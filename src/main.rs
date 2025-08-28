@@ -2,18 +2,29 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Flex, Layout, Rect},
     style::Stylize,
     symbols::border,
     text::{Line, Text},
-    widgets::{Block, Paragraph, Widget},
+    widgets::{Block, Clear, Paragraph, Widget},
 };
 use std::io;
 
+mod db;
+mod models;
+mod schema;
+
 #[derive(Debug, Default)]
 pub struct App {
-    counter: u8,
+    income: i32,
+    spendings: i32,
     exit: bool,
+
+    show_input_modal: bool,
+    valueInput: i32,
+    name: String,
+    date: String,
+    modal_type: String,
 }
 
 impl App {
@@ -28,7 +39,15 @@ impl App {
     }
 
     fn draw(&self, frame: &mut Frame) {
+        let area = frame.area();
         frame.render_widget(self, frame.area());
+
+        if self.show_input_modal {
+            let block = Block::bordered().title(format!("Add new {}", self.modal_type));
+            let area = popup_area(area, 60, 20);
+            frame.render_widget(Clear, area);
+            frame.render_widget(block, area);
+        }
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -45,8 +64,9 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
-            KeyCode::Left => self.decrement_counter(),
-            KeyCode::Right => self.increment_counter(),
+            KeyCode::Char(' ') => self.open_income_modal(),
+            KeyCode::Backspace => self.open_spending_modal(),
+            KeyCode::Esc => self.close_modal(),
             _ => {}
         }
     }
@@ -55,23 +75,37 @@ impl App {
         self.exit = true;
     }
 
-    fn increment_counter(&mut self) {
-        self.counter += 1;
+    fn close_modal(&mut self) {
+        self.show_input_modal = false;
     }
 
-    fn decrement_counter(&mut self) {
-        self.counter -= 1;
+    fn open_income_modal(&mut self) {
+        self.modal_type = String::from("income");
+        self.show_input_modal = true;
     }
+
+    fn open_spending_modal(&mut self) {
+        self.modal_type = String::from("spending");
+        self.show_input_modal = true;
+    }
+}
+
+fn popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
+    let vertical = Layout::vertical([Constraint::Percentage(percent_y)]).flex(Flex::Center);
+    let horizontal = Layout::horizontal([Constraint::Percentage(percent_x)]).flex(Flex::Center);
+    let [area] = vertical.areas(area);
+    let [area] = horizontal.areas(area);
+    area
 }
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title = Line::from(" Overall Balance ".bold());
         let instructions = Line::from(vec![
-            " Decrement ".into(),
-            "<Left>".blue().bold(),
-            " Increment ".into(),
-            "<Right>".blue().bold(),
+            " Add Income ".into(),
+            "<SpaceBar>".blue().bold(),
+            " Add Spending ".into(),
+            "<BackSpace>".blue().bold(),
             " Quit ".into(),
             "<Q> ".blue().bold(),
         ]);
@@ -82,8 +116,10 @@ impl Widget for &App {
             .border_set(border::THICK);
 
         let counter_text = Text::from(vec![Line::from(vec![
-            "Value: ".into(),
-            self.counter.to_string().yellow(),
+            "Income: ".into(),
+            self.income.to_string().green().bold(),
+            " Spendings: ".into(),
+            self.spendings.to_string().red().bold(),
         ])]);
 
         Paragraph::new(counter_text)
